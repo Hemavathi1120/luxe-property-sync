@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Menu, Home, Building, Users, Calculator, Phone } from 'lucide-react';
+import { Menu, Home, Building, Users, Calculator, Phone, LogIn, Plus } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
 const Navbar = () => {
@@ -58,15 +58,21 @@ const Navbar = () => {
 
           {/* CTA Buttons */}
           <div className="hidden md:flex items-center space-x-4">
-            <Button variant="ghost" size="sm">
-              Sign In
-            </Button>
-            <Button 
-              size="sm"
-              className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black font-semibold"
-            >
-              List Property
-            </Button>
+            <Link to="/signin">
+              <Button variant="ghost" size="sm" className="flex items-center gap-2">
+                <LogIn className="h-4 w-4" />
+                Sign In
+              </Button>
+            </Link>
+            <Link to="/list-property">
+              <Button 
+                size="sm"
+                className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black font-semibold flex items-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                List Property
+              </Button>
+            </Link>
           </div>
 
           {/* Mobile Menu */}
@@ -95,12 +101,18 @@ const Navbar = () => {
                 ))}
                 
                 <div className="pt-4 border-t border-gray-200 space-y-3">
-                  <Button variant="ghost" className="w-full justify-start">
-                    Sign In
-                  </Button>
-                  <Button className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black font-semibold">
-                    List Property
-                  </Button>
+                  <Link to="/signin" onClick={() => setIsOpen(false)}>
+                    <Button variant="ghost" className="w-full justify-start">
+                      <LogIn className="h-4 w-4 mr-2" />
+                      Sign In
+                    </Button>
+                  </Link>
+                  <Link to="/list-property" onClick={() => setIsOpen(false)}>
+                    <Button className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black font-semibold">
+                      <Plus className="h-4 w-4 mr-2" />
+                      List Property
+                    </Button>
+                  </Link>
                 </div>
               </div>
             </SheetContent>
