@@ -1,31 +1,34 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { collection, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { collection, onSnapshot, doc, updateDoc, deleteDoc, addDoc, query, orderBy } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '@/lib/firebase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useForm } from 'react-hook-form';
 import { 
   Building, 
   Users, 
   MessageSquare, 
   TrendingUp, 
   Eye, 
-  DollarSign,
   Plus,
   Search,
   Filter,
-  MoreHorizontal,
   Star,
   MapPin,
   Calendar,
   Check,
   X,
-  UserCheck,
-  UserX
+  UserCheck
 } from 'lucide-react';
 import { Property, Agent, Inquiry } from '@/types/property';
 
@@ -37,8 +40,38 @@ const AdminDashboard = () => {
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [pendingAgents, setPendingAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showAddProperty, setShowAddProperty] = useState(false);
+  const [showAddAgent, setShowAddAgent] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
 
-  // Real-time listeners
+  const propertyForm = useForm({
+    defaultValues: {
+      title: '',
+      description: '',
+      price: '',
+      address: '',
+      city: '',
+      state: '',
+      zipCode: '',
+      bedrooms: '',
+      bathrooms: '',
+      sqft: '',
+      propertyType: '',
+      amenities: '',
+      agentId: ''
+    }
+  });
+
+  const agentForm = useForm({
+    defaultValues: {
+      name: '',
+      email: '',
+      phone: '',
+      bio: '',
+      specialties: ''
+    }
+  });
+
   useEffect(() => {
     // Properties listener
     const propertiesQuery = query(collection(db, 'properties'), orderBy('createdAt', 'desc'));
@@ -83,6 +116,111 @@ const AdminDashboard = () => {
       unsubscribeInquiries();
     };
   }, []);
+
+  const handleImageUpload = async (files: FileList) => {
+    setUploadingImages(true);
+    const imageUrls: string[] = [];
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const storageRef = ref(storage, `properties/${Date.now()}_${file.name}`);
+        const snapshot = await uploadBytes(storageRef, file);
+        const downloadURL = await getDownloadURL(snapshot.ref);
+        imageUrls.push(downloadURL);
+      }
+      setUploadingImages(false);
+      return imageUrls;
+    } catch (error) {
+      setUploadingImages(false);
+      toast({
+        title: "Error uploading images",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+      return [];
+    }
+  };
+
+  const addProperty = async (data: any) => {
+    try {
+      const newProperty = {
+        title: data.title,
+        description: data.description,
+        price: parseFloat(data.price),
+        location: {
+          address: data.address,
+          city: data.city,
+          state: data.state,
+          zipCode: data.zipCode,
+          coordinates: { lat: 0, lng: 0 } // Default coordinates
+        },
+        specifications: {
+          bedrooms: parseInt(data.bedrooms),
+          bathrooms: parseFloat(data.bathrooms),
+          sqft: parseInt(data.sqft),
+          propertyType: data.propertyType as 'house' | 'condo' | 'townhouse' | 'land' | 'commercial'
+        },
+        images: [], // Images would be uploaded separately
+        amenities: data.amenities.split(',').map((a: string) => a.trim()),
+        status: 'available' as const,
+        featured: false,
+        agentId: data.agentId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        viewCount: 0
+      };
+
+      await addDoc(collection(db, 'properties'), newProperty);
+      
+      toast({
+        title: "Property added successfully",
+        description: "The new property has been added to the database.",
+      });
+      
+      setShowAddProperty(false);
+      propertyForm.reset();
+    } catch (error) {
+      toast({
+        title: "Error adding property",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const addAgent = async (data: any) => {
+    try {
+      const newAgent = {
+        name: data.name,
+        email: data.email,
+        phone: data.phone,
+        bio: data.bio,
+        profileImage: `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop&crop=face`, // Default image
+        specialties: data.specialties.split(',').map((s: string) => s.trim()),
+        rating: 0,
+        reviewCount: 0,
+        active: true,
+        createdAt: new Date()
+      };
+
+      await addDoc(collection(db, 'agents'), newAgent);
+      
+      toast({
+        title: "Agent added successfully",
+        description: "The new agent has been added and activated.",
+      });
+      
+      setShowAddAgent(false);
+      agentForm.reset();
+    } catch (error) {
+      toast({
+        title: "Error adding agent",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const approveAgent = async (agentId: string) => {
     try {
@@ -135,6 +273,45 @@ const AdminDashboard = () => {
     } catch (error) {
       toast({
         title: "Error updating property",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const toggleFeaturedProperty = async (propertyId: string, currentFeatured: boolean) => {
+    try {
+      await updateDoc(doc(db, 'properties', propertyId), {
+        featured: !currentFeatured,
+        updatedAt: new Date()
+      });
+      
+      toast({
+        title: "Property updated",
+        description: `Property ${!currentFeatured ? 'featured' : 'unfeatured'} successfully.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error updating property",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const deleteProperty = async (propertyId: string) => {
+    if (!confirm('Are you sure you want to delete this property?')) return;
+    
+    try {
+      await deleteDoc(doc(db, 'properties', propertyId));
+      
+      toast({
+        title: "Property deleted",
+        description: "The property has been removed from the database.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error deleting property",
         description: "Please try again.",
         variant: "destructive",
       });
@@ -223,10 +400,314 @@ const AdminDashboard = () => {
               <p className="text-sm text-gray-600">Manage your real estate platform</p>
             </div>
           </div>
-          <Button className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Property
-          </Button>
+          <div className="flex items-center gap-3">
+            <Dialog open={showAddAgent} onOpenChange={setShowAddAgent}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="text-green-600 border-green-600 hover:bg-green-50">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Agent
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Add New Agent</DialogTitle>
+                </DialogHeader>
+                <Form {...agentForm}>
+                  <form onSubmit={agentForm.handleSubmit(addAgent)} className="space-y-4">
+                    <FormField
+                      control={agentForm.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Name</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Agent name" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={agentForm.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <Input type="email" placeholder="agent@example.com" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={agentForm.control}
+                      name="phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Phone</FormLabel>
+                          <FormControl>
+                            <Input placeholder="+1 (555) 123-4567" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={agentForm.control}
+                      name="bio"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Bio</FormLabel>
+                          <FormControl>
+                            <Textarea placeholder="Agent bio..." {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={agentForm.control}
+                      name="specialties"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Specialties (comma separated)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Luxury Homes, Commercial, etc." {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <Button type="submit" className="w-full">
+                      Add Agent
+                    </Button>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={showAddProperty} onOpenChange={setShowAddProperty}>
+              <DialogTrigger asChild>
+                <Button className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Property
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Add New Property</DialogTitle>
+                </DialogHeader>
+                <Form {...propertyForm}>
+                  <form onSubmit={propertyForm.handleSubmit(addProperty)} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={propertyForm.control}
+                        name="title"
+                        render={({ field }) => (
+                          <FormItem className="col-span-2">
+                            <FormLabel>Property Title</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Beautiful Modern Home" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={propertyForm.control}
+                        name="price"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Price</FormLabel>
+                            <FormControl>
+                              <Input type="number" placeholder="850000" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={propertyForm.control}
+                        name="propertyType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Property Type</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select type" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="house">House</SelectItem>
+                                <SelectItem value="condo">Condo</SelectItem>
+                                <SelectItem value="townhouse">Townhouse</SelectItem>
+                                <SelectItem value="land">Land</SelectItem>
+                                <SelectItem value="commercial">Commercial</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={propertyForm.control}
+                        name="bedrooms"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Bedrooms</FormLabel>
+                            <FormControl>
+                              <Input type="number" placeholder="3" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={propertyForm.control}
+                        name="bathrooms"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Bathrooms</FormLabel>
+                            <FormControl>
+                              <Input type="number" step="0.5" placeholder="2.5" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={propertyForm.control}
+                        name="sqft"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Square Feet</FormLabel>
+                            <FormControl>
+                              <Input type="number" placeholder="2500" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={propertyForm.control}
+                        name="agentId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Assigned Agent</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select agent" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {agents.map((agent) => (
+                                  <SelectItem key={agent.id} value={agent.id}>
+                                    {agent.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    
+                    <FormField
+                      control={propertyForm.control}
+                      name="address"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Address</FormLabel>
+                          <FormControl>
+                            <Input placeholder="123 Main Street" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <div className="grid grid-cols-3 gap-4">
+                      <FormField
+                        control={propertyForm.control}
+                        name="city"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>City</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Los Angeles" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={propertyForm.control}
+                        name="state"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>State</FormLabel>
+                            <FormControl>
+                              <Input placeholder="CA" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={propertyForm.control}
+                        name="zipCode"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Zip Code</FormLabel>
+                            <FormControl>
+                              <Input placeholder="90210" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    
+                    <FormField
+                      control={propertyForm.control}
+                      name="description"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Description</FormLabel>
+                          <FormControl>
+                            <Textarea placeholder="Property description..." {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={propertyForm.control}
+                      name="amenities"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Amenities (comma separated)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Pool, Garage, Garden, etc." {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <Button type="submit" className="w-full">
+                      Add Property
+                    </Button>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
       </div>
 
@@ -298,7 +779,12 @@ const AdminDashboard = () => {
                   {properties.map((property) => (
                     <div key={property.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors">
                       <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900">{property.title}</h3>
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold text-gray-900">{property.title}</h3>
+                          {property.featured && (
+                            <Badge variant="secondary" className="bg-amber-100 text-amber-800">Featured</Badge>
+                          )}
+                        </div>
                         <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
                           <span>{formatCurrency(property.price)}</span>
                           <span className="flex items-center gap-1">
@@ -312,6 +798,13 @@ const AdminDashboard = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => toggleFeaturedProperty(property.id, property.featured)}
+                        >
+                          <Star className={`h-4 w-4 ${property.featured ? 'fill-amber-400 text-amber-400' : ''}`} />
+                        </Button>
                         <select
                           value={property.status}
                           onChange={(e) => updatePropertyStatus(property.id, e.target.value as any)}
@@ -324,56 +817,16 @@ const AdminDashboard = () => {
                         <Badge className={getStatusColor(property.status)}>
                           {property.status}
                         </Badge>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => deleteProperty(property.id)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
                   ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Pending Agents Tab */}
-          <TabsContent value="pending">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <UserCheck className="h-5 w-5 text-amber-600" />
-                  Pending Agent Approvals
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {pendingAgents.length === 0 ? (
-                    <p className="text-center text-gray-500 py-8">No pending agent applications</p>
-                  ) : (
-                    pendingAgents.map((agent) => (
-                      <div key={agent.id} className="flex items-center justify-between p-4 border rounded-lg">
-                        <div>
-                          <h3 className="font-semibold text-gray-900">{agent.name}</h3>
-                          <p className="text-sm text-gray-600">{agent.email}</p>
-                          <p className="text-sm text-gray-600">{agent.phone}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => approveAgent(agent.id)}
-                            className="bg-green-600 hover:bg-green-700 text-white"
-                          >
-                            <Check className="h-4 w-4 mr-1" />
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => rejectAgent(agent.id)}
-                          >
-                            <X className="h-4 w-4 mr-1" />
-                            Reject
-                          </Button>
-                        </div>
-                      </div>
-                    ))
-                  )}
                 </div>
               </CardContent>
             </Card>
@@ -436,6 +889,7 @@ const AdminDashboard = () => {
             </Card>
           </TabsContent>
 
+          {/* Agents Tab */}
           <TabsContent value="agents">
             <Card>
               <CardHeader>
@@ -468,6 +922,54 @@ const AdminDashboard = () => {
             </Card>
           </TabsContent>
 
+          {/* Pending Agents Tab */}
+          <TabsContent value="pending">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <UserCheck className="h-5 w-5 text-amber-600" />
+                  Pending Agent Approvals
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {pendingAgents.length === 0 ? (
+                    <p className="text-center text-gray-500 py-8">No pending agent applications</p>
+                  ) : (
+                    pendingAgents.map((agent) => (
+                      <div key={agent.id} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div>
+                          <h3 className="font-semibold text-gray-900">{agent.name}</h3>
+                          <p className="text-sm text-gray-600">{agent.email}</p>
+                          <p className="text-sm text-gray-600">{agent.phone}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => approveAgent(agent.id)}
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                          >
+                            <Check className="h-4 w-4 mr-1" />
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => rejectAgent(agent.id)}
+                          >
+                            <X className="h-4 w-4 mr-1" />
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Analytics Tab */}
           <TabsContent value="analytics">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card>
